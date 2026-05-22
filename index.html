@@ -5,14 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Monitoreo Cam 3</title>
     
-    <!-- Meta etiquetas críticas para PWA e iOS (Safari) -->
+    <!-- DIRECTIVA DE SEGURIDAD CRÍTICA PARA GITHUB PAGES (HTTPS -> HTTP) -->
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    
+    <!-- Meta etiquetas de optimización para PWA e iOS (Safari) -->
     <meta name="theme-color" content="#121212">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Monitor Cam3">
     <link rel="apple-touch-icon" href="icon-192.png">
     
-    <!-- Vinculación del Manifiesto PWA -->
+    <!-- Enlace al archivo de configuración de la app móvil -->
     <link rel="manifest" href="manifest.json">
 
     <style>
@@ -21,6 +24,7 @@
             --text-color: #ffffff;
             --online-color: #4caf50;
             --offline-color: #ff5252;
+            --loading-color: #ffb300;
         }
 
         body, html {
@@ -29,28 +33,29 @@
             width: 100%;
             height: 100%;
             background-color: var(--bg-color);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: var(--text-color);
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
 
-        /* Barra de estado superior optimizada para notch/isla dinámica */
+        /* Encabezado optimizado para pantallas con notch e islas dinámicas */
         .app-header {
-            background-color: rgba(20, 20, 20, 0.9);
-            padding: 15px 20px;
+            background-color: rgba(20, 20, 20, 0.95);
+            padding: 16px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             z-index: 10;
             border-bottom: 1px solid #222;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
         }
 
         .cam-title {
-            font-size: 1rem;
+            font-size: 1.1rem;
             font-weight: 600;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
         }
 
         .status-container {
@@ -62,12 +67,13 @@
         .status-dot {
             width: 12px;
             height: 12px;
-            background-color: #ffb300;
+            background-color: var(--loading-color);
             border-radius: 50%;
-            box-shadow: 0 0 8px rgba(255, 179, 0, 0.5);
+            box-shadow: 0 0 8px rgba(255, 179, 0, 0.6);
+            transition: all 0.4s ease;
         }
 
-        /* Contenedor de video a pantalla completa */
+        /* Contenedor adaptativo de transmisión a pantalla completa */
         .video-viewport {
             flex: 1;
             position: relative;
@@ -81,23 +87,24 @@
         .video-viewport img {
             width: 100%;
             height: 100%;
-            object-fit: contain; /* Evita deformaciones en cualquier pantalla móvil */
+            object-fit: contain; /* Mantiene la proporción nativa en vertical u horizontal */
+            display: block;
         }
 
-        /* Pantalla de error responsiva */
+        /* Panel de error interactivo en móviles */
         .error-overlay {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.85);
+            background-color: rgba(0, 0, 0, 0.92);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             text-align: center;
-            padding: 20px;
+            padding: 24px;
             box-sizing: border-box;
             display: none;
             z-index: 5;
@@ -105,82 +112,109 @@
 
         .error-overlay p {
             color: var(--offline-color);
-            margin-bottom: 15px;
+            margin: 0 0 20px 0;
             font-size: 1.1rem;
+            line-height: 1.5;
+            max-width: 280px;
         }
 
         .btn-retry {
-            background-color: #333;
-            color: #fff;
-            border: 1px solid #555;
-            padding: 10px 20px;
-            border-radius: 25px;
-            font-size: 0.9rem;
+            background-color: #1f1f1f;
+            color: #ffffff;
+            border: 1px solid #444444;
+            padding: 14px 28px;
+            border-radius: 30px;
+            font-size: 0.95rem;
             cursor: pointer;
+            font-weight: bold;
+            letter-spacing: 0.2px;
+            transition: background-color 0.2s;
+            -webkit-tap-highlight-color: transparent; /* Elimina parpadeo azul en iOS */
+        }
+        
+        .btn-retry:active {
+            background-color: #333333;
         }
     </style>
 </head>
 <body>
 
     <div class="app-header">
-        <span class="cam-title" id="camTitle">Cámara 3</span>
+        <span class="cam-title">Cámara de Seguridad 3</span>
         <div class="status-container">
             <div class="status-dot" id="statusDot"></div>
         </div>
     </div>
 
     <div class="video-viewport">
-        <!-- Solo cargamos la URL de la Cámara 3 -->
-        <img id="camStream" alt="Iniciando transmisión..." onload="handleLoad()" onerror="handleError()">
+        <!-- El elemento inicia vacío para ser controlado exclusivamente por JS -->
+        <img id="camStream" alt="Conectando con el servidor de la cámara...">
         
         <div class="error-overlay" id="errorOverlay">
-            <p>Transmisión interrumpida</p>
-            <button class="btn-retry" onclick="forceRetry()">Reconectar ahora</button>
+            <p>Conexión interrumpida o bloqueada por políticas de red móvil.</p>
+            <button class="btn-retry" onclick="forceRetry()">Forzar Conexión</button>
         </div>
     </div>
 
     <script>
-        // Configuración fija de la Cámara 3
-        const CAM_URL = "http://86.63.39.58:8080/axis-cgi/mjpg/video.cgi?camera=3&resolution=640x480&fps=15";
+        // Enlace original a la transmisión MJPEG
+        const TRANSMISSION_URL = "http://109.247.15.178:6001/mjpg/video.mjpg";
+        
         const imgElement = document.getElementById('camStream');
         const dot = document.getElementById('statusDot');
         const errorOverlay = document.getElementById('errorOverlay');
-        let reconnectTimer = null;
+        let autoReconnectInterval = null;
 
-        // Iniciar carga original
-        imgElement.src = CAM_URL;
+        // Registro semántico de eventos del ciclo de vida del stream
+        imgElement.onload = handleLoadSuccess;
+        imgElement.onerror = handleLoadError;
 
-        function handleLoad() {
+        // Arrancar la comunicación con la cámara ip
+        startStream();
+
+        function startStream() {
+            // Se fuerza el vaciado del buffer de la imagen. 
+            // Esto obliga a Safari/Chrome en celular a destruir el hilo HTTP anterior bloqueado.
+            imgElement.src = ""; 
+            imgElement.src = TRANSMISSION_URL;
+        }
+
+        function handleLoadSuccess() {
             errorOverlay.style.display = 'none';
             dot.style.backgroundColor = 'var(--online-color)';
-            dot.style.boxShadow = '0 0 8px rgba(76, 175, 80, 0.7)';
-            if (reconnectTimer) {
-                clearInterval(reconnectTimer);
-                reconnectTimer = null;
+            dot.style.boxShadow = '0 0 10px rgba(76, 175, 80, 0.8)';
+            
+            // Si hay un bucle de reconexión activo, se limpia
+            if (autoReconnectInterval) {
+                clearInterval(autoReconnectInterval);
+                autoReconnectInterval = null;
             }
         }
 
-        function handleError() {
+        function handleLoadError() {
             errorOverlay.style.display = 'flex';
             dot.style.backgroundColor = 'var(--offline-color)';
-            dot.style.boxShadow = '0 0 8px rgba(255, 82, 82, 0.7)';
+            dot.style.boxShadow = '0 0 10px rgba(255, 82, 82, 0.8)';
             
-            if (!reconnectTimer) {
-                reconnectTimer = setInterval(forceRetry, 4000); // Intento automático cada 4 segundos
+            // Intento automático de limpieza y reconexión cada 6 segundos si se cae la señal
+            if (!autoReconnectInterval) {
+                autoReconnectInterval = setInterval(startStream, 6000);
             }
         }
 
         function forceRetry() {
-            // Se añade el timestamp para romper la caché agresiva de Safari móvil
-            imgElement.src = `${CAM_URL}?t=${new Date().getTime()}`;
+            errorOverlay.style.display = 'none';
+            dot.style.backgroundColor = 'var(--loading-color)';
+            dot.style.boxShadow = '0 0 10px rgba(255, 179, 0, 0.6)';
+            startStream();
         }
 
-        // Registro del Service Worker obligatorio para funcionamiento PWA
+        // Registro seguro del Service Worker para el entorno PWA de GitHub Pages
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('PWA Service Worker Activo'))
-                    .catch(err => console.error('Error al registrar SW:', err));
+                    .then(reg => console.log('PWA preparado de forma correcta'))
+                    .catch(err => console.log('Registro SW omitido en entorno de pruebas'));
             });
         }
     </script>
