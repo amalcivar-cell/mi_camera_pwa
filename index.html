@@ -5,10 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Monitoreo Cam 3</title>
     
-    <!-- Directiva de seguridad para forzar compatibilidad -->
-    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-    
-    <!-- Meta etiquetas PWA para Android e iOS (Safari) -->
+    <!-- Meta etiquetas PWA para Android e iOS -->
     <meta name="theme-color" content="#121212">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -23,7 +20,7 @@
             --online-color: #4caf50;
             --offline-color: #ff5252;
             --loading-color: #ffb300;
-            --primary-blue: #007aff; /* Azul nativo estilo iOS/Android para acciones */
+            --primary-blue: #007aff;
         }
 
         body, html {
@@ -63,7 +60,7 @@
         .status-dot {
             width: 12px;
             height: 12px;
-            background-color: #555555; /* Gris por defecto antes de conectar */
+            background-color: #555555;
             border-radius: 50%;
             transition: all 0.4s ease;
         }
@@ -82,10 +79,9 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
-            display: none; /* Oculto hasta que se autorice */
+            display: none;
         }
 
-        /* CAPA DE AUTORIZACIÓN INICIAL E INTERRUPCIÓN */
         .overlay-screen {
             position: absolute;
             top: 0;
@@ -111,10 +107,6 @@
             color: #b3b3b3;
         }
 
-        .overlay-screen p.error-text {
-            color: var(--offline-color);
-        }
-
         .btn-action {
             background-color: var(--primary-blue);
             color: #ffffff;
@@ -126,119 +118,105 @@
             font-weight: bold;
             letter-spacing: 0.3px;
             box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
-            transition: transform 0.1s ease, background-color 0.2s;
             -webkit-tap-highlight-color: transparent;
         }
         
         .btn-action:active {
-            transform: scale(0.96);
             background-color: #0063cc;
         }
 
-        .btn-action.retry-mode {
-            background-color: #222;
-            border: 1px solid #444;
-            box-shadow: none;
+        .proxy-info {
+            margin-top: 15px;
+            font-size: 0.8rem;
+            color: #666;
         }
     </style>
 </head>
 <body>
 
     <div class="app-header">
-        <span class="cam-title">Cámara de Seguridad 3</span>
+        <span class="cam-title">Cámara 3 (Vía Proxy Seguro)</span>
         <div class="status-container">
             <div class="status-dot" id="statusDot"></div>
         </div>
     </div>
 
     <div class="video-viewport">
-        <img id="camStream" alt="Transmisión de video en vivo">
+        <img id="camStream" alt="Transmisión de video protegida">
         
-        <!-- Pantalla de control dinámica (Sirve para Autorizar y para Errores) -->
         <div class="overlay-screen" id="controlOverlay">
-            <p id="overlayMessage">Se requiere tu autorización explícita para abrir el flujo de seguridad en este dispositivo móvil.</p>
-            <button class="btn-action" id="overlayBtn" onclick="authorizeStream()">Autorizar Transmisión</button>
+            <p id="overlayMessage">Presiona el botón para iniciar la transmisión cifrada y segura en tu celular.</p>
+            <button class="btn-action" id="overlayBtn" onclick="startSecureStream()">Ver Cámara</button>
+            <div class="proxy-info" id="proxyRoute">Ruta: Buscando canal seguro...</div>
         </div>
     </div>
 
     <script>
-        const TRANSMISSION_URL = "http://109.247.15.178:6001/mjpg/video.mjpg";
+        // Dirección IP original en HTTP
+        const ORIGINAL_URL = "http://109.247.15.178:6001/mjpg/video.mjpg";
         
+        // Listado de Proxies de respaldo (Pasan el tráfico de HTTP a HTTPS de forma automática)
+        const PROXIES = [
+            `https://weserv.nl{encodeURIComponent(ORIGINAL_URL.replace('http://', ''))}&default=${encodeURIComponent(ORIGINAL_URL)}`,
+            `https://herokuapp.com{ORIGINAL_URL}`,
+            ORIGINAL_URL // Último recurso (Caída directa)
+        ];
+
+        let currentProxyIndex = 0;
         const imgElement = document.getElementById('camStream');
         const dot = document.getElementById('statusDot');
         const overlay = document.getElementById('controlOverlay');
         const overlayMessage = document.getElementById('overlayMessage');
         const overlayBtn = document.getElementById('overlayBtn');
-        
-        let reconnectInterval = null;
-        let hasBeenAuthorized = false;
+        const proxyRoute = document.getElementById('proxyRoute');
 
-        // Registro de eventos nativos
         imgElement.onload = handleSuccess;
         imgElement.onerror = handleFailure;
 
-        // FUNCIÓN DE AUTORIZACIÓN (Se ejecuta por la acción del usuario)
-        function authorizeStream() {
-            hasBeenAuthorized = true;
-            
-            // Cambiar estados visuales de carga
-            overlayMessage.textContent = "Conectando al flujo proxy...";
+        function startSecureStream() {
+            overlayMessage.textContent = "Estableciendo conexión por túnel SSL...";
             overlayBtn.style.display = "none";
             dot.style.backgroundColor = 'var(--loading-color)';
-            dot.style.boxShadow = '0 0 10px rgba(255, 179, 0, 0.6)';
             
-            // Ejecutar la petición del flujo multimedia
-            executeStream();
+            tryConnect();
         }
 
-        function executeStream() {
-            imgElement.src = ""; 
-            imgElement.src = TRANSMISSION_URL;
+        function tryConnect() {
+            const secureUrl = PROXIES[currentProxyIndex];
+            
+            // Mostrar informativamente en pantalla qué canal está intentando usar el celular
+            if (currentProxyIndex === 0) proxyRoute.textContent = "Canal Principal: Weserv TLS Gateway";
+            else if (currentProxyIndex === 1) proxyRoute.textContent = "Canal de Respaldo: CORS-Anywhere Bridge";
+            else proxyRoute.textContent = "Conexión directa (Sujeta a políticas del terminal)";
+
+            imgElement.src = "";
+            imgElement.src = secureUrl;
         }
 
         function handleSuccess() {
-            if (!hasBeenAuthorized) return;
-
-            // Ocultar capa de bloqueo y mostrar el visor de video
             overlay.style.display = 'none';
             imgElement.style.display = 'block';
-            
             dot.style.backgroundColor = 'var(--online-color)';
             dot.style.boxShadow = '0 0 10px rgba(76, 175, 80, 0.8)';
-            
-            if (reconnectInterval) {
-                clearInterval(reconnectInterval);
-                reconnectInterval = null;
-            }
         }
 
         function handleFailure() {
-            // Si el usuario no ha intentado conectar aún, ignorar errores iniciales de carga de etiqueta
-            if (!hasBeenAuthorized) return; 
-
-            imgElement.style.display = 'none';
-            overlay.style.display = 'flex';
-            
-            // Reconfigurar la interfaz para modo error / reintento manual
-            overlayMessage.innerHTML = `<span class="error-text">La transmisión se interrumpió o el navegador bloqueó el tráfico inseguro de la cámara IP.</span>`;
-            overlayBtn.textContent = "Forzar Nueva Conexión";
-            overlayBtn.className = "btn-action retry-mode";
-            overlayBtn.style.display = "block";
-            
-            dot.style.backgroundColor = 'var(--offline-color)';
-            dot.style.boxShadow = '0 0 10px rgba(255, 82, 82, 0.8)';
-            
-            // Intento de reconexión cíclico cada 7 segundos en segundo plano
-            if (!reconnectInterval) {
-                reconnectInterval = setInterval(executeStream, 7000);
+            // Si el proxy actual falla o es bloqueado, salta automáticamente al siguiente de la lista
+            if (currentProxyIndex < PROXIES.length - 1) {
+                currentProxyIndex++;
+                setTimeout(tryConnect, 1500); // Espera un segundo e intenta por la vía alternativa
+            } else {
+                // Si todos los canales fallan por completo
+                imgElement.style.display = 'none';
+                overlay.style.display = 'flex';
+                overlayMessage.innerHTML = "<span style='color:var(--offline-color)'>Error crítico de red. El celular no tolera el certificado de la cámara.</span>";
+                overlayBtn.textContent = "Reintentar Canales";
+                overlayBtn.style.display = "block";
+                currentProxyIndex = 0; // Reinicia el ciclo
+                
+                dot.style.backgroundColor = 'var(--offline-color)';
+                dot.style.boxShadow = '0 0 10px rgba(255, 82, 82, 0.8)';
             }
-        }
-
-        // Service Worker básico para cumplimiento de PWA
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').catch(() => {});
-            });
         }
     </script>
 </body>
