@@ -5,26 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Monitoreo Cam 3</title>
     
-    <!-- DIRECTIVA DE SEGURIDAD CRÍTICA PARA GITHUB PAGES (HTTPS -> HTTP) -->
+    <!-- Directiva de seguridad para forzar compatibilidad -->
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     
-    <!-- Meta etiquetas de optimización para PWA e iOS (Safari) -->
+    <!-- Meta etiquetas PWA para Android e iOS (Safari) -->
     <meta name="theme-color" content="#121212">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Monitor Cam3">
     <link rel="apple-touch-icon" href="icon-192.png">
-    
-    <!-- Enlace al archivo de configuración de la app móvil -->
     <link rel="manifest" href="manifest.json">
 
     <style>
         :root {
-            --bg-color: #000000;
+            --bg-color: #0c0c0c;
             --text-color: #ffffff;
             --online-color: #4caf50;
             --offline-color: #ff5252;
             --loading-color: #ffb300;
+            --primary-blue: #007aff; /* Azul nativo estilo iOS/Android para acciones */
         }
 
         body, html {
@@ -40,7 +39,6 @@
             flex-direction: column;
         }
 
-        /* Encabezado optimizado para pantallas con notch e islas dinámicas */
         .app-header {
             background-color: rgba(20, 20, 20, 0.95);
             padding: 16px 20px;
@@ -49,13 +47,11 @@
             align-items: center;
             z-index: 10;
             border-bottom: 1px solid #222;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
         }
 
         .cam-title {
             font-size: 1.1rem;
             font-weight: 600;
-            letter-spacing: 0.3px;
         }
 
         .status-container {
@@ -67,13 +63,11 @@
         .status-dot {
             width: 12px;
             height: 12px;
-            background-color: var(--loading-color);
+            background-color: #555555; /* Gris por defecto antes de conectar */
             border-radius: 50%;
-            box-shadow: 0 0 8px rgba(255, 179, 0, 0.6);
             transition: all 0.4s ease;
         }
 
-        /* Contenedor adaptativo de transmisión a pantalla completa */
         .video-viewport {
             flex: 1;
             position: relative;
@@ -87,53 +81,64 @@
         .video-viewport img {
             width: 100%;
             height: 100%;
-            object-fit: contain; /* Mantiene la proporción nativa en vertical u horizontal */
-            display: block;
+            object-fit: contain;
+            display: none; /* Oculto hasta que se autorice */
         }
 
-        /* Panel de error interactivo en móviles */
-        .error-overlay {
+        /* CAPA DE AUTORIZACIÓN INICIAL E INTERRUPCIÓN */
+        .overlay-screen {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.92);
+            background-color: rgba(12, 12, 12, 0.96);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             text-align: center;
-            padding: 24px;
+            padding: 30px;
             box-sizing: border-box;
-            display: none;
-            z-index: 5;
+            z-index: 20;
         }
 
-        .error-overlay p {
-            color: var(--offline-color);
-            margin: 0 0 20px 0;
+        .overlay-screen p {
             font-size: 1.1rem;
-            line-height: 1.5;
-            max-width: 280px;
+            line-height: 1.6;
+            margin: 0 0 25px 0;
+            max-width: 300px;
+            color: #b3b3b3;
         }
 
-        .btn-retry {
-            background-color: #1f1f1f;
+        .overlay-screen p.error-text {
+            color: var(--offline-color);
+        }
+
+        .btn-action {
+            background-color: var(--primary-blue);
             color: #ffffff;
-            border: 1px solid #444444;
-            padding: 14px 28px;
+            border: none;
+            padding: 16px 32px;
             border-radius: 30px;
-            font-size: 0.95rem;
+            font-size: 1rem;
             cursor: pointer;
             font-weight: bold;
-            letter-spacing: 0.2px;
-            transition: background-color 0.2s;
-            -webkit-tap-highlight-color: transparent; /* Elimina parpadeo azul en iOS */
+            letter-spacing: 0.3px;
+            box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
+            transition: transform 0.1s ease, background-color 0.2s;
+            -webkit-tap-highlight-color: transparent;
         }
         
-        .btn-retry:active {
-            background-color: #333333;
+        .btn-action:active {
+            transform: scale(0.96);
+            background-color: #0063cc;
+        }
+
+        .btn-action.retry-mode {
+            background-color: #222;
+            border: 1px solid #444;
+            box-shadow: none;
         }
     </style>
 </head>
@@ -147,74 +152,92 @@
     </div>
 
     <div class="video-viewport">
-        <!-- El elemento inicia vacío para ser controlado exclusivamente por JS -->
-        <img id="camStream" alt="Conectando con el servidor de la cámara...">
+        <img id="camStream" alt="Transmisión de video en vivo">
         
-        <div class="error-overlay" id="errorOverlay">
-            <p>Conexión interrumpida o bloqueada por políticas de red móvil.</p>
-            <button class="btn-retry" onclick="forceRetry()">Forzar Conexión</button>
+        <!-- Pantalla de control dinámica (Sirve para Autorizar y para Errores) -->
+        <div class="overlay-screen" id="controlOverlay">
+            <p id="overlayMessage">Se requiere tu autorización explícita para abrir el flujo de seguridad en este dispositivo móvil.</p>
+            <button class="btn-action" id="overlayBtn" onclick="authorizeStream()">Autorizar Transmisión</button>
         </div>
     </div>
 
     <script>
-        // Enlace original a la transmisión MJPEG
         const TRANSMISSION_URL = "http://109.247.15.178:6001/mjpg/video.mjpg";
         
         const imgElement = document.getElementById('camStream');
         const dot = document.getElementById('statusDot');
-        const errorOverlay = document.getElementById('errorOverlay');
-        let autoReconnectInterval = null;
+        const overlay = document.getElementById('controlOverlay');
+        const overlayMessage = document.getElementById('overlayMessage');
+        const overlayBtn = document.getElementById('overlayBtn');
+        
+        let reconnectInterval = null;
+        let hasBeenAuthorized = false;
 
-        // Registro semántico de eventos del ciclo de vida del stream
-        imgElement.onload = handleLoadSuccess;
-        imgElement.onerror = handleLoadError;
+        // Registro de eventos nativos
+        imgElement.onload = handleSuccess;
+        imgElement.onerror = handleFailure;
 
-        // Arrancar la comunicación con la cámara ip
-        startStream();
+        // FUNCIÓN DE AUTORIZACIÓN (Se ejecuta por la acción del usuario)
+        function authorizeStream() {
+            hasBeenAuthorized = true;
+            
+            // Cambiar estados visuales de carga
+            overlayMessage.textContent = "Conectando al flujo proxy...";
+            overlayBtn.style.display = "none";
+            dot.style.backgroundColor = 'var(--loading-color)';
+            dot.style.boxShadow = '0 0 10px rgba(255, 179, 0, 0.6)';
+            
+            // Ejecutar la petición del flujo multimedia
+            executeStream();
+        }
 
-        function startStream() {
-            // Se fuerza el vaciado del buffer de la imagen. 
-            // Esto obliga a Safari/Chrome en celular a destruir el hilo HTTP anterior bloqueado.
+        function executeStream() {
             imgElement.src = ""; 
             imgElement.src = TRANSMISSION_URL;
         }
 
-        function handleLoadSuccess() {
-            errorOverlay.style.display = 'none';
+        function handleSuccess() {
+            if (!hasBeenAuthorized) return;
+
+            // Ocultar capa de bloqueo y mostrar el visor de video
+            overlay.style.display = 'none';
+            imgElement.style.display = 'block';
+            
             dot.style.backgroundColor = 'var(--online-color)';
             dot.style.boxShadow = '0 0 10px rgba(76, 175, 80, 0.8)';
             
-            // Si hay un bucle de reconexión activo, se limpia
-            if (autoReconnectInterval) {
-                clearInterval(autoReconnectInterval);
-                autoReconnectInterval = null;
+            if (reconnectInterval) {
+                clearInterval(reconnectInterval);
+                reconnectInterval = null;
             }
         }
 
-        function handleLoadError() {
-            errorOverlay.style.display = 'flex';
+        function handleFailure() {
+            // Si el usuario no ha intentado conectar aún, ignorar errores iniciales de carga de etiqueta
+            if (!hasBeenAuthorized) return; 
+
+            imgElement.style.display = 'none';
+            overlay.style.display = 'flex';
+            
+            // Reconfigurar la interfaz para modo error / reintento manual
+            overlayMessage.innerHTML = `<span class="error-text">La transmisión se interrumpió o el navegador bloqueó el tráfico inseguro de la cámara IP.</span>`;
+            overlayBtn.textContent = "Forzar Nueva Conexión";
+            overlayBtn.className = "btn-action retry-mode";
+            overlayBtn.style.display = "block";
+            
             dot.style.backgroundColor = 'var(--offline-color)';
             dot.style.boxShadow = '0 0 10px rgba(255, 82, 82, 0.8)';
             
-            // Intento automático de limpieza y reconexión cada 6 segundos si se cae la señal
-            if (!autoReconnectInterval) {
-                autoReconnectInterval = setInterval(startStream, 6000);
+            // Intento de reconexión cíclico cada 7 segundos en segundo plano
+            if (!reconnectInterval) {
+                reconnectInterval = setInterval(executeStream, 7000);
             }
         }
 
-        function forceRetry() {
-            errorOverlay.style.display = 'none';
-            dot.style.backgroundColor = 'var(--loading-color)';
-            dot.style.boxShadow = '0 0 10px rgba(255, 179, 0, 0.6)';
-            startStream();
-        }
-
-        // Registro seguro del Service Worker para el entorno PWA de GitHub Pages
+        // Service Worker básico para cumplimiento de PWA
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('PWA preparado de forma correcta'))
-                    .catch(err => console.log('Registro SW omitido en entorno de pruebas'));
+                navigator.serviceWorker.register('sw.js').catch(() => {});
             });
         }
     </script>
